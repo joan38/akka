@@ -63,14 +63,6 @@ final case object PostRestart extends Signal
 final case object PostStop extends Signal
 
 /**
- * The actor can register for a notification in case no message is received
- * within a given time window, and the signal that is raised in this case is
- * this one. See also [[ActorContext#setReceiveTimeout]].
- */
-@SerialVersionUID(1L)
-final case object ReceiveTimeout extends Signal
-
-/**
  * Lifecycle signal that is fired when an Actor that was watched has terminated.
  * Watching is performed by invoking the
  * [[akka.typed.ActorContext]] `watch` method. The DeathWatch service is

@@ -20,7 +20,7 @@ object Effect {
   @SerialVersionUID(1L) final case class Stopped(childName: String) extends Effect
   @SerialVersionUID(1L) final case class Watched[T](other: ActorRef[T]) extends Effect
   @SerialVersionUID(1L) final case class Unwatched[T](other: ActorRef[T]) extends Effect
-  @SerialVersionUID(1L) final case class ReceiveTimeoutSet(d: Duration) extends Effect
+  @SerialVersionUID(1L) final case class ReceiveTimeoutSet[T](d: Duration, msg: T) extends Effect
   @SerialVersionUID(1L) final case class Messaged[U](other: ActorRef[U], msg: U) extends Effect
   @SerialVersionUID(1L) final case class Scheduled[U](delay: FiniteDuration, target: ActorRef[U], msg: U) extends Effect
   @SerialVersionUID(1L) case object EmptyEffect extends Effect
@@ -78,9 +78,9 @@ class EffectfulActorContext[T](_name: String, _props: Props[T], _system: ActorSy
     effectQueue.offer(Unwatched(other))
     super.unwatch(other)
   }
-  override def setReceiveTimeout(d: Duration): Unit = {
-    effectQueue.offer(ReceiveTimeoutSet(d))
-    super.setReceiveTimeout(d)
+  override def setReceiveTimeout(d: FiniteDuration, msg: T): Unit = {
+    effectQueue.offer(ReceiveTimeoutSet(d, msg))
+    super.setReceiveTimeout(d, msg)
   }
   override def schedule[U](delay: FiniteDuration, target: ActorRef[U], msg: U): a.Cancellable = {
     effectQueue.offer(Scheduled(delay, target, msg))

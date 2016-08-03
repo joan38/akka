@@ -3,12 +3,16 @@
  */
 package akka.typed
 
-import scala.concurrent.Future
+import scala.concurrent.{ Future, Promise }
 import akka.util.Timeout
 import akka.actor.InternalActorRef
 import akka.pattern.AskTimeoutException
 import akka.pattern.PromiseActorRef
 import java.lang.IllegalArgumentException
+import akka.actor.Scheduler
+import akka.typed.internal.FunctionRef
+import akka.actor.RootActorPath
+import akka.actor.Address
 
 /**
  * The ask-pattern implements the initiator side of a request–reply protocol.
@@ -31,9 +35,26 @@ import java.lang.IllegalArgumentException
  */
 object AskPattern {
   implicit class Askable[T](val ref: ActorRef[T]) extends AnyVal {
-    def ?[U](f: ActorRef[U] ⇒ T)(implicit timeout: Timeout): Future[U] = ask(ref, timeout, f)
+    def ?[U](f: ActorRef[U] ⇒ T)(implicit timeout: Timeout, scheduler: Scheduler): Future[U] = ask(ref, timeout, scheduler, f)
   }
 
-  private[typed] def ask[T, U](actorRef: ActorRef[T], timeout: Timeout, f: ActorRef[U] ⇒ T): Future[U] = ???
+  private[typed] def ask[T, U](actorRef: ActorRef[T], timeout: Timeout, scheduler: Scheduler, f: ActorRef[U] ⇒ T): Future[U] = {
+    import akka.dispatch.ExecutionContexts.{ sameThreadExecutionContext ⇒ ec }
+    val p = Promise[U]
+    val ref = new FunctionRef[U](AskPath, true,
+      (msg, self) ⇒ {
+        p.trySuccess(msg)
+        self.stop()
+      },
+      () ⇒ if (!p.isCompleted) p.tryFailure(new NoSuchElementException("ask pattern terminated before value was received")))
+    actorRef ! f(ref)
+    val d = timeout.duration
+    val c = scheduler.scheduleOnce(d)(p.tryFailure(new AskTimeoutException(s"did not receive message within $d")))(ec)
+    val future = p.future
+    future.andThen {
+      case _ ⇒ c.cancel()
+    }(ec)
+  }
 
+  private[typed] val AskPath = RootActorPath(Address("akka.typed.internal", "ask"))
 }

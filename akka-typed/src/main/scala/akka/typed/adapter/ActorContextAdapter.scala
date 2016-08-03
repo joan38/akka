@@ -36,7 +36,15 @@ private[typed] class ActorContextAdapter[T](ctx: a.ActorContext) extends ActorCo
     }
   override def watch[U](other: ActorRef[U]) = { ctx.watch(toUntyped(other)); other }
   override def unwatch[U](other: ActorRef[U]) = { ctx.unwatch(toUntyped(other)); other }
-  override def setReceiveTimeout(d: Duration) = ctx.setReceiveTimeout(d)
+  var receiveTimeoutMsg: T = null.asInstanceOf[T]
+  override def setReceiveTimeout(d: FiniteDuration, msg: T) = {
+    receiveTimeoutMsg = msg
+    ctx.setReceiveTimeout(d)
+  }
+  override def cancelReceiveTimeout(): Unit = {
+    receiveTimeoutMsg = null.asInstanceOf[T]
+    ctx.setReceiveTimeout(Duration.Undefined)
+  }
   override def executionContext: ExecutionContextExecutor = ctx.dispatcher
   override def schedule[U](delay: FiniteDuration, target: ActorRef[U], msg: U): a.Cancellable = {
     import ctx.dispatcher

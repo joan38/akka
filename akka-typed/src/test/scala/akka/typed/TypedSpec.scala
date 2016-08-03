@@ -37,6 +37,7 @@ class TypedSpec(config: Config) extends Spec with Matchers with BeforeAndAfterAl
 
   implicit val timeout = Timeout(1.minute)
   implicit val patience = PatienceConfig(3.seconds)
+  implicit val scheduler = system.scheduler
 
   override def afterAll(): Unit = {
     Await.result(system ? (Terminate(_)), timeout.duration): Status
@@ -118,10 +119,11 @@ object TypedSpec {
 
   def guardian(outstanding: Map[ActorRef[_], ActorRef[Status]] = Map.empty): Behavior[Command] =
     FullTotal {
-      case Sig(ctx, Terminated(test)) ⇒
+      case Sig(ctx, t @ Terminated(test)) ⇒
         outstanding get test match {
           case Some(reply) ⇒
-            reply ! Success
+            if (t.failure eq null) reply ! Success
+            else reply ! Failed(t.failure)
             guardian(outstanding - test)
           case None ⇒ Same
         }

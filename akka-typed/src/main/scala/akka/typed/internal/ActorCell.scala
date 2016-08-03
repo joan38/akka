@@ -139,7 +139,9 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
 
   override def spawnAdapter[U](f: U ⇒ T): ActorRef[U] = ???
 
-  override def setReceiveTimeout(d: Duration): Unit = ???
+  private[this] var receiveTimeout: (FiniteDuration, T) = null
+  override def setReceiveTimeout(d: FiniteDuration, msg: T): Unit = receiveTimeout = (d, msg)
+  override def cancelReceiveTimeout(): Unit = receiveTimeout = null
 
   /*
    * Implementation of the invocation mechanics.
@@ -267,12 +269,26 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
     case _               ⇒ // nothing to do
   }
 
+  private[this] var receiveTimeoutScheduled: Cancellable = null
+  private def unscheduleReceiveTimeout(): Unit =
+    if (receiveTimeoutScheduled ne null) {
+      receiveTimeoutScheduled.cancel()
+      receiveTimeoutScheduled = null
+    }
+  private def scheduleReceiveTimeout(): Unit =
+    receiveTimeout match {
+      case (d, msg) ⇒ receiveTimeoutScheduled = schedule(d, self, msg)
+      case _        ⇒ // nothing to do
+    }
+
   /**
    * Process the messages in the mailbox
    */
   private def processMessage(msg: T): Unit = {
+    unscheduleReceiveTimeout()
     if (Debug) println(s"actor $self processing message $msg")
     next(behavior.message(this, msg), msg)
+    scheduleReceiveTimeout()
     if (Thread.interrupted())
       throw new InterruptedException("Interrupted while processing actor messages")
   }

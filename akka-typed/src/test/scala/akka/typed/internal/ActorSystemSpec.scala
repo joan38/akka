@@ -24,9 +24,10 @@ class ActorSystemSpec extends Spec with Matchers with BeforeAndAfterAll with Sca
 
   trait CommonTests {
     def system[T](name: String, props: Props[T]): ActorSystem[T]
+    def suite: String
 
     def withSystem[T](name: String, props: Props[T], doTerminate: Boolean = true)(block: ActorSystem[T] ⇒ Unit): Terminated = {
-      val sys = system(name, props)
+      val sys = system(s"$suite-$name", props)
       try {
         block(sys)
         if (doTerminate) sys.terminate().futureValue else sys.whenTerminated.futureValue
@@ -46,7 +47,7 @@ class ActorSystemSpec extends Spec with Matchers with BeforeAndAfterAll with Sca
       }
       val p = t.ref.path
       p.name should ===("/")
-      p.address.system should ===("a")
+      p.address.system should ===(suite + "-a")
     }
 
     def `must terminate the guardian actor`(): Unit = {
@@ -64,7 +65,7 @@ class ActorSystemSpec extends Spec with Matchers with BeforeAndAfterAll with Sca
 
     def `must have a name`(): Unit =
       withSystem("name", Props(Empty[String])) { sys ⇒
-        sys.name should ===("name")
+        sys.name should ===(suite + "-name")
       }
 
     def `must report its uptime`(): Unit =
@@ -93,6 +94,7 @@ class ActorSystemSpec extends Spec with Matchers with BeforeAndAfterAll with Sca
 
   object `An ActorSystemImpl` extends CommonTests {
     def system[T](name: String, props: Props[T]): ActorSystem[T] = ActorSystem(name, props)
+    def suite = "native"
 
     // this is essential to complete ActorCellSpec, see there
     def `must correctly treat Watch dead letters`(): Unit =
@@ -105,5 +107,6 @@ class ActorSystemSpec extends Spec with Matchers with BeforeAndAfterAll with Sca
 
   object `An ActorSystemAdapter` extends CommonTests {
     def system[T](name: String, props: Props[T]): ActorSystem[T] = ActorSystem.adapter(name, props)
+    def suite = "adapter"
   }
 }

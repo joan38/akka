@@ -11,8 +11,12 @@ object ActorContextSpec {
 
   sealed trait Command
   sealed trait Event
+  sealed trait Monitor extends Event
 
-  final case class GotSignal(signal: Signal) extends Event with DeadLetterSuppression
+  final case class GotSignal(signal: Signal) extends Monitor with DeadLetterSuppression
+  final case object GotReceiveTimeout extends Monitor
+
+  final case object ReceiveTimeout extends Command
 
   final case class Ping(replyTo: ActorRef[Pong]) extends Command
   sealed trait Pong extends Event
@@ -27,7 +31,7 @@ object ActorContextSpec {
 
   final case class Throw(ex: Exception) extends Command
 
-  final case class MkChild(name: Option[String], monitor: ActorRef[GotSignal], replyTo: ActorRef[Created]) extends Command
+  final case class MkChild(name: Option[String], monitor: ActorRef[Monitor], replyTo: ActorRef[Created]) extends Command
   final case class Created(ref: ActorRef[Command]) extends Event
 
   final case class SetTimeout(duration: FiniteDuration, replyTo: ActorRef[TimeoutSet.type]) extends Command
@@ -69,12 +73,15 @@ object ActorContextSpec {
   final case class GetAdapter(replyTo: ActorRef[Adapter]) extends Command
   final case class Adapter(a: ActorRef[Command]) extends Event
 
-  def subject(monitor: ActorRef[GotSignal]): Behavior[Command] =
+  def subject(monitor: ActorRef[Monitor]): Behavior[Command] =
     FullTotal {
       case Sig(ctx, signal) ⇒
         monitor ! GotSignal(signal)
         Same
       case Msg(ctx, message) ⇒ message match {
+        case ReceiveTimeout ⇒
+          monitor ! GotReceiveTimeout
+          Same
         case Ping(replyTo) ⇒
           replyTo ! Pong1
           Same
@@ -94,7 +101,10 @@ object ActorContextSpec {
           replyTo ! Created(child)
           Same
         case SetTimeout(d, replyTo) ⇒
-          ctx.setReceiveTimeout(d)
+          d match {
+            case f: FiniteDuration ⇒ ctx.setReceiveTimeout(f, ReceiveTimeout)
+            case _                 ⇒ ctx.cancelReceiveTimeout()
+          }
           replyTo ! TimeoutSet
           Same
         case Schedule(delay, target, msg, replyTo) ⇒
@@ -487,7 +497,7 @@ class ActorContextSpec extends TypedSpec(ConfigFactory.parseString(
       startWith
         .stimulate(_ ! SetTimeout(1.nano, self), _ ⇒ TimeoutSet)
         .expectMessage(expectTimeout) { (msg, _) ⇒
-          msg should ===(GotSignal(ReceiveTimeout))
+          msg should ===(GotReceiveTimeout)
         }
     })
 

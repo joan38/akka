@@ -24,7 +24,7 @@ private[typed] class ActorAdapter[T](_initialBehavior: () ⇒ Behavior[T]) exten
       val msg = Terminated(ActorRefAdapter(ref))(null)
       next(behavior.management(ctx, msg), msg)
     case akka.actor.ReceiveTimeout ⇒
-      next(behavior.management(ctx, ReceiveTimeout), ReceiveTimeout)
+      next(behavior.message(ctx, ctx.receiveTimeoutMsg), ctx.receiveTimeoutMsg)
     case msg ⇒
       val m = msg.asInstanceOf[T]
       next(behavior.message(ctx, m), m)

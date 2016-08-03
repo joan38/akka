@@ -183,6 +183,7 @@ private[typed] class ActorSystemImpl[-T](override val name: String,
             terminationPromise.tryComplete(Success(Terminated(this)(null)))
             closeScheduler()
             dispatchers.shutdown()
+            untypedSystem.terminate()
           } else if (terminateTriggered.compareAndSet(false, true))
             topLevelActors.asScala.foreach(ref ⇒ ref.sendSystem(Terminate()))
         case _ ⇒ // ignore
@@ -227,6 +228,7 @@ private[typed] class ActorSystemImpl[-T](override val name: String,
 
   def systemActorOf[U](props: Props[U], name: String)(implicit timeout: Timeout): Future[ActorRef[U]] = {
     import AskPattern._
+    implicit val sched = scheduler
     systemGuardian ? CreateSystemActor(props)
   }
 }

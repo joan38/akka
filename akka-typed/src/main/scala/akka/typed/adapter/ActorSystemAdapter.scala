@@ -46,10 +46,15 @@ private[typed] class ActorSystemAdapter[-T](untyped: a.ActorSystemImpl)
   override def scheduler: akka.actor.Scheduler = untyped.scheduler
   override def settings: akka.actor.ActorSystem.Settings = untyped.settings
   override def startTime: Long = untyped.startTime
-  override def terminate(): scala.concurrent.Future[akka.typed.Terminated] = untyped.terminate().map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))
   override def threadFactory: java.util.concurrent.ThreadFactory = untyped.threadFactory
   override def uptime: Long = untyped.uptime
-  override lazy val whenTerminated: scala.concurrent.Future[akka.typed.Terminated] = untyped.whenTerminated.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))
+
+  import akka.dispatch.ExecutionContexts.sameThreadExecutionContext
+
+  override def terminate(): scala.concurrent.Future[akka.typed.Terminated] =
+    untyped.terminate().map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
+  override lazy val whenTerminated: scala.concurrent.Future[akka.typed.Terminated] =
+    untyped.whenTerminated.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
 }
 
 private[typed] object ActorSystemAdapter {

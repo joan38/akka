@@ -30,5 +30,7 @@ class DispatchersImpl(settings: akka.actor.ActorSystem.Settings, log: LoggingAda
     def submit[T](x$1: java.util.concurrent.Callable[T]): java.util.concurrent.Future[T] = es.submit(x$1)
   }
   def lookup(selector: DispatcherSelector): ExecutionContextExecutor = ex //FIXME respect selection
-  def shutdown(): Unit = ex.shutdownNow()
+  def shutdown(): Unit = {
+    ex.shutdown()
+  }
 }

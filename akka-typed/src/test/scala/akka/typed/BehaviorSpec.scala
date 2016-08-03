@@ -126,18 +126,6 @@ class BehaviorSpec extends TypedSpec {
       mkCtx().check(PostRestart).check(GetSelf)
     }
 
-    def `must react to ReceiveTimeout`(): Unit = {
-      mkCtx().check(ReceiveTimeout)
-    }
-
-    def `must react to ReceiveTimeout after a message`(): Unit = {
-      mkCtx().check(GetSelf).check(ReceiveTimeout)
-    }
-
-    def `must react to a message after ReceiveTimeout`(): Unit = {
-      mkCtx().check(ReceiveTimeout).check(GetSelf)
-    }
-
     def `must react to Terminated`(): Unit = {
       mkCtx().check(Terminated(Inbox("x").ref)(null))
     }
@@ -216,18 +204,6 @@ class BehaviorSpec extends TypedSpec {
 
     def `must react to a message after PostRestart after swap`(): Unit = {
       mkCtx().check(PostRestart).check(Swap).check(GetSelf)
-    }
-
-    def `must react to ReceiveTimeout after swap`(): Unit = {
-      mkCtx().check(Swap).check(ReceiveTimeout)
-    }
-
-    def `must react to ReceiveTimeout after a message after swap`(): Unit = {
-      mkCtx().check(Swap).check(GetSelf).check(ReceiveTimeout)
-    }
-
-    def `must react to a message after ReceiveTimeout after swap`(): Unit = {
-      mkCtx().check(Swap).check(ReceiveTimeout).check(GetSelf)
     }
 
     def `must react to Terminated after swap`(): Unit = {

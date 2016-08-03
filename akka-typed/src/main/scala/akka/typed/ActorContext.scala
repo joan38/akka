@@ -107,12 +107,17 @@ trait ActorContext[T] {
   //def unwatch(other: akka.actor.ActorRef): akka.actor.ActorRef
 
   /**
-   * Schedule the sending of a [[ReceiveTimeout]] notification in case no other
+   * Schedule the sending of a notification in case no other
    * message is received during the given period of time. The timeout starts anew
    * with each received message. Provide `Duration.Undefined` to switch off this
    * mechanism.
    */
-  def setReceiveTimeout(d: Duration): Unit
+  def setReceiveTimeout(d: FiniteDuration, msg: T): Unit
+
+  /**
+   * Cancel the sending of receive timeout notifications.
+   */
+  def cancelReceiveTimeout(): Unit
 
   /**
    * Schedule the sending of the given message to the given target Actor after
@@ -181,7 +186,8 @@ class StubbedActorContext[T](
   def watch(other: akka.actor.ActorRef): other.type = other
   def unwatch[U](other: ActorRef[U]): ActorRef[U] = other
   def unwatch(other: akka.actor.ActorRef): other.type = other
-  def setReceiveTimeout(d: Duration): Unit = ()
+  def setReceiveTimeout(d: FiniteDuration, msg: T): Unit = ()
+  def cancelReceiveTimeout(): Unit = ()
 
   def schedule[U](delay: FiniteDuration, target: ActorRef[U], msg: U): untyped.Cancellable = new untyped.Cancellable {
     def cancel() = false

@@ -36,7 +36,7 @@ class ReceiverSpec extends TypedSpec {
   private def afterGetOneTimeout(ctx: ActorContext[Command[Msg]]): Behavior[Command[Msg]] =
     behavior[Msg]
       .message(ctx, GetOne(1.nano)(dummyInbox.ref))
-      .management(ctx, ReceiveTimeout)
+      .asInstanceOf[Behavior[InternalCommand[Msg]]].message(ctx.asInstanceOf[ActorContext[InternalCommand[Msg]]], ReceiveTimeout()).asInstanceOf[Behavior[Command[Msg]]]
 
   private def afterGetAll(ctx: ActorContext[Command[Msg]]): Behavior[Command[Msg]] =
     behavior[Msg]
@@ -97,13 +97,13 @@ class ReceiverSpec extends TypedSpec {
       setup("getOneLater") { (int, ext, inbox) ⇒
         int.run(GetOne(1.second)(inbox.ref))
         int.getAllEffects() match {
-          case ReceiveTimeoutSet(d) :: Nil ⇒ d > Duration.Zero should be(true)
-          case other                       ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
+          case ReceiveTimeoutSet(d, _) :: Nil ⇒ d > Duration.Zero should be(true)
+          case other                          ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
         }
         inbox.hasMessages should be(false)
         ext.run(Msg(1))
         int.getAllEffects() match {
-          case ReceiveTimeoutSet(d) :: Nil ⇒ d should be theSameInstanceAs (Duration.Undefined)
+          case ReceiveTimeoutSet(d, _) :: Nil ⇒ d should be theSameInstanceAs (Duration.Undefined)
         }
         inbox.receiveAll() should be(GetOneResult(int.self, Some(Msg(1))) :: Nil)
       }
@@ -122,16 +122,16 @@ class ReceiverSpec extends TypedSpec {
       setup("getNoneTimeout") { (int, ext, inbox) ⇒
         int.run(GetOne(1.nano)(inbox.ref))
         int.getAllEffects() match {
-          case ReceiveTimeoutSet(d) :: Nil ⇒ // okay
-          case other                       ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
+          case ReceiveTimeoutSet(d, _) :: Nil ⇒ // okay
+          case other                          ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
         }
         inbox.hasMessages should be(false)
         // currently this all takes >1ns, but who knows what the future brings
         Thread.sleep(1)
-        int.signal(ReceiveTimeout)
+        int.asInstanceOf[EffectfulActorContext[InternalCommand[Msg]]].run(ReceiveTimeout())
         int.getAllEffects() match {
-          case ReceiveTimeoutSet(d) :: Nil ⇒ d should be theSameInstanceAs (Duration.Undefined)
-          case other                       ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
+          case ReceiveTimeoutSet(d, _) :: Nil ⇒ d should be theSameInstanceAs (Duration.Undefined)
+          case other                          ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
         }
         inbox.receiveAll() should be(GetOneResult(int.self, None) :: Nil)
       }
@@ -218,8 +218,8 @@ class ReceiverSpec extends TypedSpec {
       setup("getAllWhileGetOne") { (int, ext, inbox) ⇒
         int.run(GetOne(1.second)(inbox.ref))
         int.getAllEffects() match {
-          case ReceiveTimeoutSet(d) :: Nil ⇒ // okay
-          case other                       ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
+          case ReceiveTimeoutSet(d, _) :: Nil ⇒ // okay
+          case other                          ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
         }
         inbox.hasMessages should be(false)
         int.run(GetAll(Duration.Zero)(inbox.ref))
@@ -231,13 +231,13 @@ class ReceiverSpec extends TypedSpec {
       setup("getAllWhileGetOne") { (int, ext, inbox) ⇒
         int.run(GetOne(1.second)(inbox.ref))
         int.getAllEffects() match {
-          case ReceiveTimeoutSet(d) :: Nil ⇒ // okay
-          case other                       ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
+          case ReceiveTimeoutSet(d, _) :: Nil ⇒ // okay
+          case other                          ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
         }
         inbox.hasMessages should be(false)
         int.run(GetAll(1.nano)(inbox.ref))
         val msg = int.getAllEffects() match {
-          case (s: Scheduled[_]) :: ReceiveTimeoutSet(_) :: Nil ⇒ assertScheduled(s, int.self)
+          case (s: Scheduled[_]) :: ReceiveTimeoutSet(_, _) :: Nil ⇒ assertScheduled(s, int.self)
         }
         inbox.receiveAll() should be(Nil)
         int.run(msg)
