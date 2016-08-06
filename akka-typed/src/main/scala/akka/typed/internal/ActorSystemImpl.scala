@@ -231,4 +231,28 @@ private[typed] class ActorSystemImpl[-T](override val name: String,
     implicit val sched = scheduler
     systemGuardian ? CreateSystemActor(props)
   }
+
+  def printTree: String = {
+    def printNode(node: ActorRefImpl[Nothing], indent: String): String = {
+      node match {
+        case wc: LocalActorRef[_] ⇒
+          val cell = wc.cell
+          (if (indent.isEmpty) "-> " else indent.dropRight(1) + "⌊-> ") +
+            node.path.name + " " + e.Logging.simpleName(node) + " " +
+            (if (cell.behavior ne null) cell.behavior.getClass else "null") +
+            " status=" + cell.getStatus +
+            " nextMsg=" + cell.peekMessage +
+            (if (cell.children.isEmpty) "" else "\n") +
+            ({
+              val children = cell.children.toSeq.sorted
+              val bulk = children.dropRight(1) map (r ⇒ printNode(r.toImplN, indent + "   |"))
+              bulk ++ (children.lastOption map (r ⇒ printNode(r.toImplN, indent + "    ")))
+            } mkString ("\n"))
+        case _ ⇒
+          indent + node.path.name + " " + e.Logging.simpleName(node)
+      }
+    }
+    printNode(systemGuardian, "") + "\n" +
+      printNode(userGuardian, "")
+  }
 }

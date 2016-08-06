@@ -103,6 +103,11 @@ trait ActorSystem[-T] extends ActorRef[T] { this: ScalaActorRef[T] with internal
    * every message sent to it.
    */
   def deadLetters[U]: ActorRef[U]
+
+  /**
+   * INTERNAL API
+   */
+  def printTree: String
 }
 
 object ActorSystem {

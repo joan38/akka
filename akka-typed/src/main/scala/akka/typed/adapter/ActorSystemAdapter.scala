@@ -15,7 +15,7 @@ import scala.concurrent.ExecutionContextExecutor
  * a longer time; in all other cases the wrapper will just be spawned for a single call in
  * most circumstances.
  */
-private[typed] class ActorSystemAdapter[-T](untyped: a.ActorSystemImpl)
+private[typed] class ActorSystemAdapter[-T](val untyped: a.ActorSystemImpl)
   extends ActorRef[T](a.RootActorPath(a.Address("akka", untyped.name)) / "user")
   with ActorSystem[T] with ScalaActorRef[T] with internal.ActorRefImpl[T] {
 
@@ -48,6 +48,7 @@ private[typed] class ActorSystemAdapter[-T](untyped: a.ActorSystemImpl)
   override def startTime: Long = untyped.startTime
   override def threadFactory: java.util.concurrent.ThreadFactory = untyped.threadFactory
   override def uptime: Long = untyped.uptime
+  override def printTree: String = untyped.printTree
 
   import akka.dispatch.ExecutionContexts.sameThreadExecutionContext
 

@@ -66,6 +66,7 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
                                   override val props: Props[T],
                                   val parent: ActorRefImpl[Nothing])
   extends ActorContext[T] with Runnable with SupervisionMechanics[T] with DeathWatch[T] {
+  import ActorCell._
 
   /*
    * Implementation of the ActorContext trait.
@@ -140,18 +141,24 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
   override def spawnAdapter[U](f: U ⇒ T): ActorRef[U] = ???
 
   private[this] var receiveTimeout: (FiniteDuration, T) = null
-  override def setReceiveTimeout(d: FiniteDuration, msg: T): Unit = receiveTimeout = (d, msg)
-  override def cancelReceiveTimeout(): Unit = receiveTimeout = null
+  override def setReceiveTimeout(d: FiniteDuration, msg: T): Unit = {
+    if (Debug) println(s"$self setting receive timeout of $d, msg $msg")
+    receiveTimeout = (d, msg)
+  }
+  override def cancelReceiveTimeout(): Unit = {
+    if (Debug) println(s"$self canceling receive timeout")
+    receiveTimeout = null
+  }
 
   /*
    * Implementation of the invocation mechanics.
    */
-  import ActorCell._
 
   // see comment in companion object for details
   @volatile private[this] var _status: Int = 0
-  protected def getStatus: Int = _status
+  protected[typed] def getStatus: Int = _status
   private[this] val queue: Queue[T] = new ConcurrentLinkedQueue[T]
+  private[typed] def peekMessage: T = queue.peek()
   private[this] val maxQueue: Int = Math.min(props.queueSize, maxActivations)
   @volatile private[this] var _systemQueue: LatestFirstSystemMessageList = SystemMessageList.LNil
 
@@ -174,16 +181,20 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
       val oldActivations = activations(old)
       // this is not an off-by-one: #msgs is activations-1 if >0
       if (oldActivations > maxQueue) {
+        if (Debug) println(s"[$thread] NOT enqueueing $msg into $self at status $old ($oldActivations > $maxQueue)")
         // cannot enqueue, need to give back activation token
         unsafe.getAndAddInt(this, statusOffset, -1)
         system.eventStream.publish(Dropped(msg, self))
       } else if (ActorCell.isTerminating(old)) {
+        if (Debug) println(s"[$thread] NOT enqueueing $msg into $self at status $old (is terminating)")
         unsafe.getAndAddInt(this, statusOffset, -1)
         system.deadLetters ! msg
       } else {
+        if (Debug) println(s"[$thread] enqueueing $msg into $self at status $old")
         // need to enqueue; if the actor sees the token but not the message, it will reschedule
         queue.add(msg)
         if (oldActivations == 0) {
+          if (Debug) println(s"[$thread] waking up $self")
           unsafe.getAndAddInt(this, statusOffset, 1) // the first 1 was just the “active” bit, now add 1msg
           // if the actor was not yet running, set it in motion; spurious wakeups don’t hurt
           executionContext.execute(this)
@@ -209,23 +220,27 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
         val old = unsafe.getAndAddInt(this, statusOffset, 1)
         if (isClosed(old)) {
           // nothing to do
+          if (Debug) println(s"[$thread] NOT enqueueing $signal to $self: terminating")
         } else if (activations(old) == 0) {
           // all is good: we signaled the transition to active
+          if (Debug) println(s"[$thread] enqueueing $signal to $self: activating")
           executionContext.execute(this)
         } else {
           // take back that token: we didn’t actually enqueue a normal message and the actor was already active
+          if (Debug) println(s"[$thread] enqueueing $signal to $self: already active")
           unsafe.getAndAddInt(this, statusOffset, -1)
         }
-      }
+      } else if (Debug) println(s"[$thread] NOT enqueueing $signal to $self: terminated")
     } catch handleException
   }
 
   override final def run(): Unit = {
-    if (Debug) println(s"entering run($self): interrupted=${Thread.interrupted()}")
+    if (Debug) println(s"[$thread] entering run($self): interrupted=${Thread.interrupted()}")
     val status = _status
     val msgs = messageCount(status)
     var processed = 0
     try {
+      unscheduleReceiveTimeout()
       if (!isClosed(status)) {
         while (processAllSystemMessages() && !queue.isEmpty() && processed < msgs) {
           val msg = queue.poll()
@@ -233,30 +248,39 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
           processMessage(msg)
         }
       }
+      scheduleReceiveTimeout()
     } catch {
       case NonFatal(ex) ⇒ fail(ex)
       case ie: InterruptedException ⇒
         fail(ie)
-        if (Debug) println(s"interrupting due to catching InterruptedException")
+        if (Debug) println(s"[$thread] interrupting due to catching InterruptedException")
         Thread.currentThread.interrupt()
     } finally {
+      // also remove the general activation token
+      processed += 1
       val prev = unsafe.getAndAddInt(this, statusOffset, -processed)
       val now = prev - processed
       if (isClosed(now)) {
         // we’re finished
-      } else if (now > 1) {
+      } else if (activations(now) > 0) {
+        // normal messages pending: reverse the deactivation
+        unsafe.getAndAddInt(this, statusOffset, 1)
         executionContext.execute(this)
-      } else {
-        val again = unsafe.getAndAddInt(this, statusOffset, -1)
-        if (again > 1 || _systemQueue.head != null) {
-          executionContext.execute(this)
-        }
+      } else if (_systemQueue.head != null) {
+        /*
+         * system message was enqueued after our last processing, we now need to
+         * race against the other party because the enqueue might have happened
+         * before the deactivation (above) and hence not scheduled
+         */
+        val again = unsafe.getAndAddInt(this, statusOffset, 1)
+        if (activations(now) == 0) executionContext.execute(this)
+        else unsafe.getAndAddInt(this, statusOffset, -1)
       }
     }
-    if (Debug) println(s" exiting run($self): interrupted=${Thread.interrupted()}")
+    if (Debug) println(s"[$thread] exiting run($self): interrupted=${Thread.interrupted()}")
   }
 
-  protected var behavior: Behavior[T] = _
+  protected[typed] var behavior: Behavior[T] = _
 
   protected def next(b: Behavior[T], msg: Any): Unit = {
     if (Behavior.isUnhandled(b)) unhandled(msg)
@@ -277,18 +301,18 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
     }
   private def scheduleReceiveTimeout(): Unit =
     receiveTimeout match {
-      case (d, msg) ⇒ receiveTimeoutScheduled = schedule(d, self, msg)
-      case _        ⇒ // nothing to do
+      case (d, msg) ⇒
+        receiveTimeoutScheduled = schedule(d, self, msg)
+      case other ⇒
+      // nothing to do
     }
 
   /**
    * Process the messages in the mailbox
    */
   private def processMessage(msg: T): Unit = {
-    unscheduleReceiveTimeout()
-    if (Debug) println(s"actor $self processing message $msg")
+    if (Debug) println(s"[$thread] actor $self processing message $msg")
     next(behavior.message(this, msg), msg)
-    scheduleReceiveTimeout()
     if (Thread.interrupted())
       throw new InterruptedException("Interrupted while processing actor messages")
   }
@@ -321,7 +345,7 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
         catch {
           case ie: InterruptedException ⇒
             fail(ie)
-            if (Debug) println(s"interrupting due to catching InterruptedException during system message processing")
+            if (Debug) println(s"[$thread] interrupting due to catching InterruptedException during system message processing")
             Thread.currentThread.interrupt()
             true
           case ex @ (NonFatal(_) | _: AssertionError) ⇒
@@ -369,6 +393,8 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
   protected final def publish(e: Logging.LogEvent): Unit = try system.eventStream.publish(e) catch { case NonFatal(_) ⇒ }
 
   protected final def clazz(o: AnyRef): Class[_] = if (o eq null) this.getClass else o.getClass
+
+  private def thread: String = Thread.currentThread.getName
 
   override def toString: String = f"ActorCell(status = ${_status}%08x, queue = $queue)"
 }

@@ -128,18 +128,22 @@ object StepWise {
         ctx.setReceiveTimeout(t, ReceiveTimeout)
         Full {
           case Msg(_, ReceiveTimeout) ⇒ throwTimeout(trace, s"timeout of $t expired while waiting for a message")
-          case Msg(_, msg)            ⇒ run(ctx, tail, f(msg, value))
-          case Sig(_, other)          ⇒ throwIllegalState(trace, s"unexpected $other while waiting for a message")
+          case Msg(_, msg) ⇒
+            ctx.cancelReceiveTimeout()
+            run(ctx, tail, f(msg, value))
+          case Sig(_, other) ⇒ throwIllegalState(trace, s"unexpected $other while waiting for a message")
         }
       case MultiMessage(t, c, f, trace) :: tail ⇒
         val deadline = Deadline.now + t
         def behavior(count: Int, acc: List[Any]): Behavior[Any] = {
           ctx.setReceiveTimeout(deadline.timeLeft, ReceiveTimeout)
           Full {
-            case Msg(_, ReceiveTimeout) ⇒ throwTimeout(trace, s"timeout of $t expired while waiting for $c messages (got only $count)")
+            case Msg(_, ReceiveTimeout) ⇒
+              throwTimeout(trace, s"timeout of $t expired while waiting for $c messages (got only $count)")
             case Msg(_, msg) ⇒
               val nextCount = count + 1
               if (nextCount == c) {
+                ctx.cancelReceiveTimeout()
                 run(ctx, tail, f((msg :: acc).reverse, value))
               } else behavior(nextCount, msg :: acc)
             case Sig(_, other) ⇒ throwIllegalState(trace, s"unexpected $other while waiting for $c messages (got $count valid ones)")
@@ -150,8 +154,10 @@ object StepWise {
         ctx.setReceiveTimeout(t, ReceiveTimeout)
         Full {
           case Msg(_, ReceiveTimeout) ⇒ throwTimeout(trace, s"timeout of $t expired while waiting for termination")
-          case Sig(_, t: Terminated)  ⇒ run(ctx, tail, f(t, value))
-          case other                  ⇒ throwIllegalState(trace, s"unexpected $other while waiting for termination")
+          case Sig(_, t: Terminated) ⇒
+            ctx.cancelReceiveTimeout()
+            run(ctx, tail, f(t, value))
+          case other ⇒ throwIllegalState(trace, s"unexpected $other while waiting for termination")
         }
       case Nil ⇒ Stopped
     }

@@ -13,6 +13,7 @@ import akka.actor.Scheduler
 import akka.typed.internal.FunctionRef
 import akka.actor.RootActorPath
 import akka.actor.Address
+import akka.util.LineNumbers
 
 /**
  * The ask-pattern implements the initiator side of a request–reply protocol.
@@ -35,10 +36,38 @@ import akka.actor.Address
  */
 object AskPattern {
   implicit class Askable[T](val ref: ActorRef[T]) extends AnyVal {
-    def ?[U](f: ActorRef[U] ⇒ T)(implicit timeout: Timeout, scheduler: Scheduler): Future[U] = ask(ref, timeout, scheduler, f)
+    def ?[U](f: ActorRef[U] ⇒ T)(implicit timeout: Timeout, scheduler: Scheduler): Future[U] =
+      ref match {
+        case a: adapter.ActorRefAdapter[_]    ⇒ askUntyped(ref, a.untyped, timeout, f)
+        case a: adapter.ActorSystemAdapter[_] ⇒ askUntyped(ref, a.untyped.guardian, timeout, f)
+        case _                                ⇒ ask(ref, timeout, scheduler, f)
+      }
   }
 
-  private[typed] def ask[T, U](actorRef: ActorRef[T], timeout: Timeout, scheduler: Scheduler, f: ActorRef[U] ⇒ T): Future[U] = {
+  private class PromiseRef[U](target: ActorRef[_], untyped: InternalActorRef, timeout: Timeout) {
+    val (ref: ActorRef[U], future: Future[U], promiseRef: PromiseActorRef) =
+      if (untyped.isTerminated)
+        (adapter.ActorRefAdapter[U](untyped.provider.deadLetters),
+          Future.failed[U](new AskTimeoutException(s"Recipient[$target] had already been terminated.")), null)
+      else if (timeout.duration.length <= 0)
+        (adapter.ActorRefAdapter[U](untyped.provider.deadLetters),
+          Future.failed[U](new IllegalArgumentException(s"Timeout length must be positive, question not sent to [$target]")), null)
+      else {
+        val a = PromiseActorRef(untyped.provider, timeout, target, "unknown")
+        val b = adapter.ActorRefAdapter[U](a)
+        (b, a.result.future.asInstanceOf[Future[U]], a)
+      }
+  }
+
+  private def askUntyped[T, U](target: ActorRef[T], untyped: InternalActorRef, timeout: Timeout, f: ActorRef[U] ⇒ T): Future[U] = {
+    val p = new PromiseRef[U](target, untyped, timeout)
+    val m = f(p.ref)
+    if (p.promiseRef ne null) p.promiseRef.messageClassName = m.getClass.getName
+    target ! m
+    p.future
+  }
+
+  private def ask[T, U](actorRef: ActorRef[T], timeout: Timeout, scheduler: Scheduler, f: ActorRef[U] ⇒ T): Future[U] = {
     import akka.dispatch.ExecutionContexts.{ sameThreadExecutionContext ⇒ ec }
     val p = Promise[U]
     val ref = new FunctionRef[U](AskPath, true,

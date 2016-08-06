@@ -50,4 +50,6 @@ private[typed] class ActorSystemStub(val name: String)
   override def threadFactory: java.util.concurrent.ThreadFactory = new ThreadFactory {
     override def newThread(r: Runnable): Thread = new Thread(r)
   }
+
+  override def printTree: String = "no tree for ActorSystemStub"
 }

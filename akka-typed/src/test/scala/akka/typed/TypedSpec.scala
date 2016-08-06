@@ -22,20 +22,25 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalactic.ConversionCheckedTripleEquals
 import org.scalactic.Constraint
 import org.junit.runner.RunWith
+import scala.util.control.NonFatal
 
 /**
  * Helper class for writing tests for typed Actors with ScalaTest.
  */
 @RunWith(classOf[org.scalatest.junit.JUnitRunner])
-class TypedSpec(config: Config) extends Spec with Matchers with BeforeAndAfterAll with ScalaFutures with ConversionCheckedTripleEquals {
+class TypedSpec(val config: Config) extends Spec with Matchers with BeforeAndAfterAll with ScalaFutures with ConversionCheckedTripleEquals {
   import TypedSpec._
   import AskPattern._
 
   def this() = this(ConfigFactory.empty)
 
-  implicit val system = ActorSystem(AkkaSpec.getCallerName(classOf[TypedSpec]), Props(guardian()), Some(config withFallback AkkaSpec.testConf))
+  // extension point
+  def createSystem[T](name: String, props: Props[T], config: Option[Config]): ActorSystem[T] = ActorSystem(name, props, config)
 
-  implicit val timeout = Timeout(1.minute)
+  implicit val system = createSystem(AkkaSpec.getCallerName(classOf[TypedSpec]), Props(guardian()), Some(config withFallback AkkaSpec.testConf))
+
+  def setTimeout: Timeout = Timeout(1.minute)
+  implicit val timeout = setTimeout
   implicit val patience = PatienceConfig(3.seconds)
   implicit val scheduler = system.scheduler
 
@@ -45,7 +50,7 @@ class TypedSpec(config: Config) extends Spec with Matchers with BeforeAndAfterAl
 
   // TODO remove after basing on ScalaTest 3 with async support
   import akka.testkit._
-  def await[T](f: Future[T]): T = Await.result(f, 60.seconds)
+  def await[T](f: Future[T]): T = Await.result(f, timeout.duration * 1.1)
 
   val blackhole = await(system ? Create(Props(ScalaDSL.Full[Any] { case _ ⇒ ScalaDSL.Same }), "blackhole"))
 
@@ -53,20 +58,28 @@ class TypedSpec(config: Config) extends Spec with Matchers with BeforeAndAfterAl
    * Run an Actor-based test. The test procedure is most conveniently
    * formulated using the [[StepWise$]] behavior type.
    */
-  def runTest[T: ClassTag](name: String)(behavior: Behavior[T]): Future[Status] =
+  def runTest[T: ClassTag](name: String)(behavior: Behavior[T])(implicit system: ActorSystem[Command]): Future[Status] =
     system ? (RunTest(name, Props(behavior), _, timeout.duration))
 
   // TODO remove after basing on ScalaTest 3 with async support
-  def sync(f: Future[Status]): Unit = {
+  def sync(f: Future[Status])(implicit system: ActorSystem[Command]): Unit = {
     def unwrap(ex: Throwable): Throwable = ex match {
       case ActorInitializationException(_, _, ex) ⇒ ex
       case other                                  ⇒ other
     }
 
-    await(f) match {
-      case Success    ⇒ ()
-      case Failed(ex) ⇒ throw unwrap(ex)
-      case Timedout   ⇒ fail("test timed out")
+    try await(f) match {
+      case Success ⇒ ()
+      case Failed(ex) ⇒
+        println(system.printTree)
+        throw unwrap(ex)
+      case Timedout ⇒
+        println(system.printTree)
+        fail("test timed out")
+    } catch {
+      case NonFatal(ex) =>
+        println(system.printTree)
+        throw ex
     }
   }
 
@@ -75,7 +88,7 @@ class TypedSpec(config: Config) extends Spec with Matchers with BeforeAndAfterAl
     source: String = null,
     start: String = "",
     pattern: String = null,
-    occurrences: Int = Int.MaxValue): EventFilter = {
+    occurrences: Int = Int.MaxValue)(implicit system: ActorSystem[Command]): EventFilter = {
     val filter = EventFilter(message, source, start, pattern, occurrences)
     system.eventStream.publish(Mute(filter))
     filter

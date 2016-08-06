@@ -27,7 +27,7 @@ package object adapter {
   private[adapter] def toUntyped[U](ref: ActorRef[U]): akka.actor.InternalActorRef =
     ref match {
       case adapter: ActorRefAdapter[_] ⇒ adapter.untyped
-      case _                           ⇒ throw new UnsupportedOperationException("illegal operation: only adapted untyped ActorRefs permissible")
+      case _                           ⇒ throw new UnsupportedOperationException(s"only adapted untyped ActorRefs permissible ($ref of class ${ref.getClass})")
     }
 
   private[adapter] def sendSystemMessage(untyped: akka.actor.InternalActorRef, signal: internal.SystemMessage): Unit =

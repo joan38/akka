@@ -15,7 +15,7 @@ private[typed] trait ActorRefImpl[-T] extends ActorRef[T] { this: ScalaActorRef[
   def isLocal: Boolean
 }
 
-private[typed] class LocalActorRef[-T](_path: a.ActorPath, cell: ActorCell[T])
+private[typed] class LocalActorRef[T](_path: a.ActorPath, private[typed] val cell: ActorCell[T])
   extends ActorRef[T](_path) with ActorRefImpl[T] with ScalaActorRef[T] {
   override def tell(msg: T): Unit = cell.send(msg)
   override def sendSystem(signal: SystemMessage): Unit = cell.sendSystem(signal)
