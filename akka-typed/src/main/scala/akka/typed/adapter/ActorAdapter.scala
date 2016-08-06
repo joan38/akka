@@ -19,11 +19,18 @@ private[typed] class ActorAdapter[T](_initialBehavior: () ⇒ Behavior[T]) exten
 
   val ctx = new ActorContextAdapter[T](context)
 
+  var failures: Map[a.ActorRef, Throwable] = Map.empty
+
   def receive = {
-    case akka.actor.Terminated(ref) ⇒
-      val msg = Terminated(ActorRefAdapter(ref))(null)
+    case a.Terminated(ref) ⇒
+      val msg =
+        if (failures contains ref) {
+          val ex = failures(ref)
+          failures -= ref
+          Terminated(ActorRefAdapter(ref))(ex)
+        } else Terminated(ActorRefAdapter(ref))(null)
       next(behavior.management(ctx, msg), msg)
-    case akka.actor.ReceiveTimeout ⇒
+    case a.ReceiveTimeout ⇒
       next(behavior.message(ctx, ctx.receiveTimeoutMsg), ctx.receiveTimeoutMsg)
     case msg ⇒
       val m = msg.asInstanceOf[T]
@@ -43,7 +50,12 @@ private[typed] class ActorAdapter[T](_initialBehavior: () ⇒ Behavior[T]) exten
     case other           ⇒ super.unhandled(other)
   }
 
-  override val supervisorStrategy = akka.actor.SupervisorStrategy.stoppingStrategy
+  override val supervisorStrategy = a.OneForOneStrategy() {
+    case ex =>
+      val ref = sender()
+      if (context.asInstanceOf[a.ActorCell].isWatching(ref)) failures = failures.updated(ref, ex)
+      a.SupervisorStrategy.Stop
+  }
 
   override def preStart(): Unit =
     next(behavior.management(ctx, PreStart), PreStart)

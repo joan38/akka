@@ -23,6 +23,7 @@ import org.scalactic.ConversionCheckedTripleEquals
 import org.scalactic.Constraint
 import org.junit.runner.RunWith
 import scala.util.control.NonFatal
+import org.scalatest.exceptions.TestFailedException
 
 /**
  * Helper class for writing tests for typed Actors with ScalaTest.
@@ -35,24 +36,32 @@ class TypedSpec(val config: Config) extends Spec with Matchers with BeforeAndAft
   def this() = this(ConfigFactory.empty)
 
   // extension point
-  def createSystem[T](name: String, props: Props[T], config: Option[Config]): ActorSystem[T] = ActorSystem(name, props, config)
-
-  implicit val system = createSystem(AkkaSpec.getCallerName(classOf[TypedSpec]), Props(guardian()), Some(config withFallback AkkaSpec.testConf))
-
   def setTimeout: Timeout = Timeout(1.minute)
+
+  val nativeSystem = ActorSystem(AkkaSpec.getCallerName(classOf[TypedSpec]), Props(guardian()), Some(config withFallback AkkaSpec.testConf))
+  val adaptedSystem = ActorSystem.adapter(AkkaSpec.getCallerName(classOf[TypedSpec]), Props(guardian()), Some(config withFallback AkkaSpec.testConf))
+
+  trait NativeSystem {
+    def system = nativeSystem
+  }
+  trait AdaptedSystem {
+    def system = adaptedSystem
+  }
+
   implicit val timeout = setTimeout
   implicit val patience = PatienceConfig(3.seconds)
-  implicit val scheduler = system.scheduler
+  implicit val scheduler = nativeSystem.scheduler
 
   override def afterAll(): Unit = {
-    Await.result(system ? (Terminate(_)), timeout.duration): Status
+    Await.result(nativeSystem ? (Terminate(_)), timeout.duration): Status
+    Await.result(adaptedSystem ? (Terminate(_)), timeout.duration): Status
   }
 
   // TODO remove after basing on ScalaTest 3 with async support
   import akka.testkit._
   def await[T](f: Future[T]): T = Await.result(f, timeout.duration * 1.1)
 
-  val blackhole = await(system ? Create(Props(ScalaDSL.Full[Any] { case _ ⇒ ScalaDSL.Same }), "blackhole"))
+  val blackhole = await(nativeSystem ? Create(Props(ScalaDSL.Full[Any] { case _ ⇒ ScalaDSL.Same }), "blackhole"))
 
   /**
    * Run an Actor-based test. The test procedure is most conveniently
@@ -153,4 +162,26 @@ object TypedSpec {
         c.replyTo ! ctx.spawn(c.props, c.name)
         Same
     }
+}
+
+class TypedSpecSpec extends TypedSpec {
+  object `A TypedSpec` {
+
+    trait CommonTests {
+      implicit def system: ActorSystem[TypedSpec.Command]
+
+      def `must report failures`(): Unit = {
+        a[TestFailedException] must be thrownBy {
+          sync(runTest("failure")(StepWise[String]((ctx, startWith) =>
+            startWith {
+              fail("expected")
+            }
+          )))
+        }
+      }
+    }
+
+    object `when using the native implementation` extends CommonTests with NativeSystem
+    object `when using the adapted implementation` extends CommonTests with AdaptedSystem
+  }
 }

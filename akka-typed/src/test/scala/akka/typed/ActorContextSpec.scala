@@ -182,8 +182,14 @@ class ActorContextSpec extends TypedSpec(ConfigFactory.parseString(
      */
     def behavior(ctx: ActorContext[Event]): Behavior[Command]
 
+    implicit def system: ActorSystem[TypedSpec.Command]
+
+    private def mySuite: String =
+      if (system == nativeSystem) suite + "Native"
+      else suite + "Adapted"
+
     def setup(name: String)(proc: (ActorContext[Event], StepWise.Steps[Event, ActorRef[Command]]) ⇒ StepWise.Steps[Event, _]): Future[TypedSpec.Status] =
-      runTest(s"$suite-$name")(StepWise[Event] { (ctx, startWith) ⇒
+      runTest(s"$mySuite-$name")(StepWise[Event] { (ctx, startWith) ⇒
         val steps =
           startWith.withKeepTraces(true)(ctx.spawn(Props(behavior(ctx)), "subject"))
             .expectMessage(expectTimeout) { (msg, ref) ⇒
@@ -537,46 +543,60 @@ class ActorContextSpec extends TypedSpec(ConfigFactory.parseString(
     })
   }
 
-  object `An ActorContext` extends Tests {
+  trait Normal extends Tests {
     override def suite = "basic"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] = subject(ctx.self)
   }
+  object `An ActorContext (native)` extends Normal with NativeSystem
+  object `An ActorContext (adapted)` extends Normal with AdaptedSystem
 
-  object `An ActorContext with widened Behavior` extends Tests {
+  trait Widened extends Tests {
     override def suite = "widened"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] = subject(ctx.self).widen { case x ⇒ x }
   }
+  object `An ActorContext with widened Behavior (native)` extends Widened with NativeSystem
+  object `An ActorContext with widened Behavior (adapted)` extends Widened with AdaptedSystem
 
-  object `An ActorContext with SynchronousSelf` extends Tests {
+  trait SynchronousSelf extends Tests {
     override def suite = "synchronous"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] = SynchronousSelf(self ⇒ subject(ctx.self))
   }
+  object `An ActorContext with SynchronousSelf (native)` extends SynchronousSelf with NativeSystem
+  object `An ActorContext with SynchronousSelf (adapted)` extends SynchronousSelf with AdaptedSystem
 
-  object `An ActorContext with non-matching Tap` extends Tests {
+  trait NonMatchingTap extends Tests {
     override def suite = "TapNonMatch"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] = Tap({ case null ⇒ }, subject(ctx.self))
   }
+  object `An ActorContext with non-matching Tap (native)` extends NonMatchingTap with NativeSystem
+  object `An ActorContext with non-matching Tap (adapted)` extends NonMatchingTap with AdaptedSystem
 
-  object `An ActorContext with matching Tap` extends Tests {
+  trait MatchingTap extends Tests {
     override def suite = "TapMatch"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] = Tap({ case _ ⇒ }, subject(ctx.self))
   }
+  object `An ActorContext with matching Tap (native)` extends MatchingTap with NativeSystem
+  object `An ActorContext with matching Tap (adapted)` extends MatchingTap with AdaptedSystem
 
   private val stoppingBehavior = Full[Command] { case Msg(_, Stop) ⇒ Stopped }
 
-  object `An ActorContext with And (left)` extends Tests {
+  trait AndLeft extends Tests {
     override def suite = "and"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] =
       And(subject(ctx.self), stoppingBehavior)
   }
+  object `An ActorContext with And (left, native)` extends AndLeft with NativeSystem
+  object `An ActorContext with And (left, adapted)` extends AndLeft with AdaptedSystem
 
-  object `An ActorContext with And (right)` extends Tests {
+  trait AndRight extends Tests {
     override def suite = "and"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] =
       And(stoppingBehavior, subject(ctx.self))
   }
+  object `An ActorContext with And (right, native)` extends AndRight with NativeSystem
+  object `An ActorContext with And (right, adapted)` extends AndRight with AdaptedSystem
 
-  object `An ActorContext with Or (left)` extends Tests {
+  trait OrLeft extends Tests {
     override def suite = "basic"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] =
       Or(subject(ctx.self), stoppingBehavior)
@@ -585,8 +605,10 @@ class ActorContextSpec extends TypedSpec(ConfigFactory.parseString(
       ref ! Stop
     }
   }
+  object `An ActorContext with Or (left, native)` extends OrLeft with NativeSystem
+  object `An ActorContext with Or (left, adapted)` extends OrLeft with AdaptedSystem
 
-  object `An ActorContext with Or (right)` extends Tests {
+  trait OrRight extends Tests {
     override def suite = "basic"
     override def behavior(ctx: ActorContext[Event]): Behavior[Command] =
       Or(stoppingBehavior, subject(ctx.self))
@@ -595,5 +617,7 @@ class ActorContextSpec extends TypedSpec(ConfigFactory.parseString(
       ref ! Stop
     }
   }
+  object `An ActorContext with Or (right, native)` extends OrRight with NativeSystem
+  object `An ActorContext with Or (right, adapted)` extends OrRight with AdaptedSystem
 
 }

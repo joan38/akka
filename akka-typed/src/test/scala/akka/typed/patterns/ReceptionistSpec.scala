@@ -19,7 +19,8 @@ class ReceptionistSpec extends TypedSpec {
   case object ServiceKeyB extends ServiceKey[ServiceB]
   val propsB = Props(Static[ServiceB](msg ⇒ ()))
 
-  object `A Receptionist` {
+  trait CommonTests {
+    implicit def system: ActorSystem[TypedSpec.Command]
 
     def `must register a service`(): Unit = {
       val ctx = new EffectfulActorContext("register", Props(behavior), system)
@@ -106,7 +107,6 @@ class ReceptionistSpec extends TypedSpec {
     def `must work with ask`(): Unit = sync(runTest("Receptionist") {
       StepWise[Registered[ServiceA]] { (ctx, startWith) ⇒
         val self = ctx.self
-        import system.executionContext
         startWith.withKeepTraces(true) {
           val r = ctx.spawnAnonymous(Props(behavior))
           val s = ctx.spawnAnonymous(propsA)
@@ -116,7 +116,7 @@ class ReceptionistSpec extends TypedSpec {
         }.expectMessage(1.second) {
           case (msg, (f, s)) ⇒
             msg should be(Registered(ServiceKeyA, s))
-            f foreach (self ! _)
+            f.foreach(self ! _)(system.executionContext)
             s
         }.expectMessage(1.second) {
           case (msg, s) ⇒
@@ -126,5 +126,8 @@ class ReceptionistSpec extends TypedSpec {
     })
 
   }
+
+  object `A Receptionist (native)` extends CommonTests with NativeSystem
+  object `A Receptionist (adapted)` extends CommonTests with AdaptedSystem
 
 }

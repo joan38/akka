@@ -52,7 +52,7 @@ class ReceiverSpec extends TypedSpec {
   private def setup(name: String, behv: Behavior[Command[Msg]] = behavior[Msg])(
     proc: (EffectfulActorContext[Command[Msg]], EffectfulActorContext[Msg], Inbox[Replies[Msg]]) ⇒ Unit): Unit =
     for (Setup(description, behv, messages, effects) ← startingPoints) {
-      val ctx = new EffectfulActorContext("ctx", Props(ScalaDSL.ContextAware(behv)), system)
+      val ctx = new EffectfulActorContext("ctx", Props(ScalaDSL.ContextAware(behv)), nativeSystem)
       withClue(s"[running for starting point '$description' (${ctx.currentBehavior})]: ") {
         dummyInbox.receiveAll() should have size messages
         ctx.getAllEffects() should have size effects

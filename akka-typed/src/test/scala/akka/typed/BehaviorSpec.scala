@@ -3,7 +3,7 @@
  */
 package akka.typed
 
-import org.scalautils.ConversionCheckedTripleEquals
+import org.scalactic.ConversionCheckedTripleEquals
 
 class BehaviorSpec extends TypedSpec {
 
@@ -49,6 +49,7 @@ class BehaviorSpec extends TypedSpec {
   val StateB: State = new State { override def toString = "StateB"; override def next = StateA }
 
   trait Common {
+    def system: ActorSystem[TypedSpec.Command]
     def behavior(monitor: ActorRef[Event]): Behavior[Command]
 
     case class Setup(ctx: EffectfulActorContext[Command], inbox: Inbox[Event])
@@ -247,11 +248,13 @@ class BehaviorSpec extends TypedSpec {
     }
   }
 
-  object `A Full Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait FullBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] = mkFull(monitor)
   }
+  object `A Full Behavior (native)` extends FullBehavior with NativeSystem
+  object `A Full Behavior (adapted)` extends FullBehavior with AdaptedSystem
 
-  object `A FullTotal Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait FullTotalBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] = behv(monitor, StateA)
     private def behv(monitor: ActorRef[Event], state: State): Behavior[Command] = {
       import ScalaDSL.{ FullTotal, Msg, Sig, Same, Unhandled, Stopped }
@@ -282,33 +285,45 @@ class BehaviorSpec extends TypedSpec {
       }
     }
   }
+  object `A FullTotal Behavior (native)` extends FullTotalBehavior with NativeSystem
+  object `A FullTotal Behavior (adapted)` extends FullTotalBehavior with AdaptedSystem
 
-  object `A Widened Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait WidenedBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.Widened(mkFull(monitor), { case x ⇒ x })
   }
+  object `A Widened Behavior (native)` extends WidenedBehavior with NativeSystem
+  object `A Widened Behavior (adapted)` extends WidenedBehavior with AdaptedSystem
 
-  object `A ContextAware Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait ContextAwareBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.ContextAware(ctx ⇒ mkFull(monitor))
   }
+  object `A ContextAware Behavior (native)` extends ContextAwareBehavior with NativeSystem
+  object `A ContextAware Behavior (adapted)` extends ContextAwareBehavior with AdaptedSystem
 
-  object `A SelfAware Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait SelfAwareBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.SelfAware(self ⇒ mkFull(monitor))
   }
+  object `A SelfAware Behavior (native)` extends SelfAwareBehavior with NativeSystem
+  object `A SelfAware Behavior (adapted)` extends SelfAwareBehavior with AdaptedSystem
 
-  object `A non-matching Tap Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait NonMatchingTapBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.Tap({ case null ⇒ }, mkFull(monitor))
   }
+  object `A non-matching Tap Behavior (native)` extends NonMatchingTapBehavior with NativeSystem
+  object `A non-matching Tap Behavior (adapted)` extends NonMatchingTapBehavior with AdaptedSystem
 
-  object `A matching Tap Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait MatchingTapBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.Tap({ case _ ⇒ }, mkFull(monitor))
   }
+  object `A matching Tap Behavior (native)` extends MatchingTapBehavior with NativeSystem
+  object `A matching Tap Behavior (adapted)` extends MatchingTapBehavior with AdaptedSystem
 
-  object `A SynchronousSelf Behavior` extends Messages with BecomeWithLifecycle with Stoppable {
+  trait SynchronousSelfBehavior extends Messages with BecomeWithLifecycle with Stoppable {
     import ScalaDSL._
 
     implicit private val inbox = Inbox[Command]("syncself")
@@ -339,6 +354,8 @@ class BehaviorSpec extends TypedSpec {
       ctx.currentBehavior should ===(Stopped[Command])
     }
   }
+  object `A SynchronourSelf Behavior (native)` extends SynchronousSelfBehavior with NativeSystem
+  object `A SynchronousSelf Behavior (adapted)` extends SynchronousSelfBehavior with AdaptedSystem
 
   trait And extends Common {
     private implicit val inbox = Inbox[State]("and")
@@ -357,15 +374,19 @@ class BehaviorSpec extends TypedSpec {
     }
   }
 
-  object `A Behavior combined with And (left)` extends Messages with BecomeWithLifecycle with And {
+  trait BehaviorAndLeft extends Messages with BecomeWithLifecycle with And {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.And(mkFull(monitor), ScalaDSL.Empty)
   }
+  object `A Behavior combined with And (left, native)` extends BehaviorAndLeft with NativeSystem
+  object `A Behavior combined with And (left, adapted)` extends BehaviorAndLeft with NativeSystem
 
-  object `A Behavior combined with And (right)` extends Messages with BecomeWithLifecycle with And {
+  trait BehaviorAndRight extends Messages with BecomeWithLifecycle with And {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.And(ScalaDSL.Empty, mkFull(monitor))
   }
+  object `A Behavior combined with And (right, native)` extends BehaviorAndRight with NativeSystem
+  object `A Behavior combined with And (right, adapted)` extends BehaviorAndRight with NativeSystem
 
   trait Or extends Common {
     private def strange(monitor: ActorRef[Event]): Behavior[Command] =
@@ -396,17 +417,21 @@ class BehaviorSpec extends TypedSpec {
     }
   }
 
-  object `A Behavior combined with Or (left)` extends Messages with BecomeWithLifecycle with Or {
+  trait BehaviorOrLeft extends Messages with BecomeWithLifecycle with Or {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.Or(mkFull(monitor), ScalaDSL.Empty)
   }
+  object `A Behavior combined with Or (left, native)` extends BehaviorOrLeft with NativeSystem
+  object `A Behavior combined with Or (left, adapted)` extends BehaviorOrLeft with NativeSystem
 
-  object `A Behavior combined with Or (right)` extends Messages with BecomeWithLifecycle with Or {
+  trait BehaviorOrRight extends Messages with BecomeWithLifecycle with Or {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.Or(ScalaDSL.Empty, mkFull(monitor))
   }
+  object `A Behavior combined with Or (right, native)` extends BehaviorOrRight with NativeSystem
+  object `A Behavior combined with Or (right, adapted)` extends BehaviorOrRight with NativeSystem
 
-  object `A Partial Behavior` extends Messages with Become with Stoppable {
+  trait PartialBehavior extends Messages with Become with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] = behv(monitor, StateA)
     def behv(monitor: ActorRef[Event], state: State): Behavior[Command] =
       ScalaDSL.Partial {
@@ -428,8 +453,10 @@ class BehaviorSpec extends TypedSpec {
         case Stop ⇒ ScalaDSL.Stopped
       }
   }
+  object `A Partial Behavior (native)` extends PartialBehavior with NativeSystem
+  object `A Partial Behavior (adapted)` extends PartialBehavior with AdaptedSystem
 
-  object `A Total Behavior` extends Messages with Become with Stoppable {
+  trait TotalBehavior extends Messages with Become with Stoppable {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] = behv(monitor, StateA)
     def behv(monitor: ActorRef[Event], state: State): Behavior[Command] =
       ScalaDSL.Total {
@@ -453,8 +480,10 @@ class BehaviorSpec extends TypedSpec {
         case _: AuxPing ⇒ ScalaDSL.Unhandled
       }
   }
+  object `A Total Behavior (native)` extends TotalBehavior with NativeSystem
+  object `A Total Behavior (adapted)` extends TotalBehavior with AdaptedSystem
 
-  object `A Static Behavior` extends Messages {
+  trait StaticBehavior extends Messages {
     override def behavior(monitor: ActorRef[Event]): Behavior[Command] =
       ScalaDSL.Static {
         case Ping        ⇒ monitor ! Pong
@@ -467,4 +496,6 @@ class BehaviorSpec extends TypedSpec {
         case _: AuxPing  ⇒
       }
   }
+  object `A Static Behavior (native)` extends StaticBehavior with NativeSystem
+  object `A Static Behavior (adapted)` extends StaticBehavior with AdaptedSystem
 }

@@ -19,13 +19,6 @@ class PerformanceSpec extends TypedSpec(
 
   override def setTimeout = Timeout(20.seconds)
 
-  val adapter = ActorSystem.adapter("PerformanceSpecAdapter", Props(TypedSpec.guardian()), Some(config withFallback AkkaSpec.testConf))
-  override def afterAll(): Unit = {
-    super.afterAll()
-    import AskPattern._
-    await(adapter ? TypedSpec.Terminate)
-  }
-
   object `A static behavior` {
 
     case class Ping(x: Int, pong: ActorRef[Pong], report: ActorRef[Pong])
@@ -65,7 +58,7 @@ class PerformanceSpec extends TypedSpec(
         }
       }
 
-    val iterations = system.settings.config.getInt("akka.typed.PerformanceSpec.iterations")
+    val iterations = nativeSystem.settings.config.getInt("akka.typed.PerformanceSpec.iterations")
 
     trait CommonTests {
       implicit def system: ActorSystem[TypedSpec.Command]
@@ -81,12 +74,8 @@ class PerformanceSpec extends TypedSpec(
       def `09 when using 8 pairs with 10 messages`(): Unit = sync(runTest("09")(behavior(8, 10, iterations, "dispatcher-8")))
     }
 
-    object `must be fast with native ActorSystem` extends CommonTests {
-      val system = PerformanceSpec.this.system
-    }
-    object `must be fast with ActorSystemAdapter` extends CommonTests {
-      val system = adapter
-    }
+    object `must be fast with native ActorSystem` extends CommonTests with NativeSystem
+    object `must be fast with ActorSystemAdapter` extends CommonTests with AdaptedSystem
   }
 
 }
