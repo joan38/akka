@@ -43,6 +43,7 @@ object StepWise {
   private final case class Message(timeout: FiniteDuration, f: (Any, Any) ⇒ Any, trace: Trace) extends AST
   private final case class MultiMessage(timeout: FiniteDuration, count: Int, f: (Seq[Any], Any) ⇒ Any, trace: Trace) extends AST
   private final case class Termination(timeout: FiniteDuration, f: (Terminated, Any) ⇒ Any, trace: Trace) extends AST
+  private final case class Multi(timeout: FiniteDuration, count: Int, f: (Seq[Either[Signal, Any]], Any) ⇒ Any, trace: Trace) extends AST
 
   private case object ReceiveTimeout
 
@@ -82,6 +83,9 @@ object StepWise {
     def expectTermination[V](timeout: FiniteDuration)(f: (Terminated, U) ⇒ V): Steps[T, V] =
       copy(ops = Termination(timeout, f.asInstanceOf[(Terminated, Any) ⇒ Any], getTrace()) :: ops)
 
+    def expectMulti[V](timeout: FiniteDuration, count: Int)(f: (Seq[Either[Signal, T]], U) ⇒ V): Steps[T, V] =
+      copy(ops = Multi(timeout, count, f.asInstanceOf[(Seq[Either[Signal, Any]], Any) ⇒ Any], getTrace()) :: ops)
+
     def expectMessageKeep(timeout: FiniteDuration)(f: (T, U) ⇒ Unit): Steps[T, U] =
       copy(ops = Message(timeout, (msg, value) ⇒ { f.asInstanceOf[(Any, Any) ⇒ Any](msg, value); value }, getTrace()) :: ops)
 
@@ -90,6 +94,9 @@ object StepWise {
 
     def expectTerminationKeep(timeout: FiniteDuration)(f: (Terminated, U) ⇒ Unit): Steps[T, U] =
       copy(ops = Termination(timeout, (t, value) ⇒ { f.asInstanceOf[(Terminated, Any) ⇒ Any](t, value); value }, getTrace()) :: ops)
+
+    def expectMultiKeep(timeout: FiniteDuration, count: Int)(f: (Seq[Either[Signal, T]], U) ⇒ Unit): Steps[T, U] =
+      copy(ops = Multi(timeout, count, (msgs, value) ⇒ { f.asInstanceOf[(Seq[Either[Signal, Any]], Any) ⇒ Any](msgs, value); value }, getTrace()) :: ops)
 
     def withKeepTraces(b: Boolean): Steps[T, U] = copy(keepTraces = b)
   }
@@ -147,6 +154,28 @@ object StepWise {
                 run(ctx, tail, f((msg :: acc).reverse, value))
               } else behavior(nextCount, msg :: acc)
             case Sig(_, other) ⇒ throwIllegalState(trace, s"unexpected $other while waiting for $c messages (got $count valid ones)")
+          }
+        }
+        behavior(0, Nil)
+      case Multi(t, c, f, trace) :: tail ⇒
+        val deadline = Deadline.now + t
+        def behavior(count: Int, acc: List[Either[Signal, Any]]): Behavior[Any] = {
+          ctx.setReceiveTimeout(deadline.timeLeft, ReceiveTimeout)
+          Full {
+            case Msg(_, ReceiveTimeout) ⇒
+              throwTimeout(trace, s"timeout of $t expired while waiting for $c messages (got only $count)")
+            case Msg(_, msg) ⇒
+              val nextCount = count + 1
+              if (nextCount == c) {
+                ctx.cancelReceiveTimeout()
+                run(ctx, tail, f((Right(msg) :: acc).reverse, value))
+              } else behavior(nextCount, Right(msg) :: acc)
+            case Sig(_, other) ⇒
+              val nextCount = count + 1
+              if (nextCount == c) {
+                ctx.cancelReceiveTimeout()
+                run(ctx, tail, f((Left(other) :: acc).reverse, value))
+              } else behavior(nextCount, Left(other) :: acc)
           }
         }
         behavior(0, Nil)

@@ -71,6 +71,7 @@ private[typed] trait DeathWatch[T] {
    * it will be propagated to user's receive.
    */
   protected def watchedActorTerminated(actor: ARImpl, failure: Throwable): Boolean = {
+    removeChild(actor)
     if (watching.contains(actor)) {
       maintainAddressTerminatedSubscription(actor) {
         watching -= actor
@@ -80,7 +81,6 @@ private[typed] trait DeathWatch[T] {
         next(behavior.management(ctx, t), t)
       }
     }
-    removeChild(actor)
     if (isTerminating && terminatingMap.isEmpty) {
       finishTerminate()
       false
@@ -195,8 +195,8 @@ private[typed] trait DeathWatch[T] {
     }
   }
 
+  // FIXME: these will need to be redone once remoting is integrated
   private def unsubscribeAddressTerminated(): Unit = ???
-
   private def subscribeAddressTerminated(): Unit = ???
 
 }

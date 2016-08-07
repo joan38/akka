@@ -104,6 +104,7 @@ class ReceiverSpec extends TypedSpec {
         ext.run(Msg(1))
         int.getAllEffects() match {
           case ReceiveTimeoutSet(d, _) :: Nil ⇒ d should be theSameInstanceAs (Duration.Undefined)
+          case other                          ⇒ fail(s"$other was not List(ReceiveTimeoutSet(_))")
         }
         inbox.receiveAll() should be(GetOneResult(int.self, Some(Msg(1))) :: Nil)
       }

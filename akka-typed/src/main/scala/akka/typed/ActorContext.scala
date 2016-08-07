@@ -194,7 +194,7 @@ class StubbedActorContext[T](
     def isCancelled = true
   }
   implicit def executionContext: ExecutionContextExecutor = system.executionContext
-  def spawnAdapter[U](f: U ⇒ T): ActorRef[U] = ???
+  def spawnAdapter[U](f: U ⇒ T): ActorRef[U] = spawnAnonymous(Props.empty)
 
   def getInbox[U](name: String): Inbox[U] = _children(name).asInstanceOf[Inbox[U]]
   def removeInbox(name: String): Unit = _children -= name

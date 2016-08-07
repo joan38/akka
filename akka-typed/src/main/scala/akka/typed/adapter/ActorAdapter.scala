@@ -51,7 +51,7 @@ private[typed] class ActorAdapter[T](_initialBehavior: () ⇒ Behavior[T]) exten
   }
 
   override val supervisorStrategy = a.OneForOneStrategy() {
-    case ex =>
+    case ex ⇒
       val ref = sender()
       if (context.asInstanceOf[a.ActorCell].isWatching(ref)) failures = failures.updated(ref, ex)
       a.SupervisorStrategy.Stop

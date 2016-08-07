@@ -82,6 +82,10 @@ class EffectfulActorContext[T](_name: String, _props: Props[T], _system: ActorSy
     effectQueue.offer(ReceiveTimeoutSet(d, msg))
     super.setReceiveTimeout(d, msg)
   }
+  override def cancelReceiveTimeout(): Unit = {
+    effectQueue.offer(ReceiveTimeoutSet(Duration.Undefined, null))
+    super.cancelReceiveTimeout()
+  }
   override def schedule[U](delay: FiniteDuration, target: ActorRef[U], msg: U): a.Cancellable = {
     effectQueue.offer(Scheduled(delay, target, msg))
     super.schedule(delay, target, msg)

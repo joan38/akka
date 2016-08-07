@@ -87,6 +87,7 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
         }
     }
   }
+  private[typed] def terminating: Iterable[ActorRef[Nothing]] = terminatingMap.values
 
   private var _self: ActorRefImpl[T] = _
   private[typed] def setSelf(ref: ActorRefImpl[T]): Unit = _self = ref
@@ -138,7 +139,15 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
 
   override val executionContext: ExecutionContextExecutor = system.dispatchers.lookup(props.dispatcher)
 
-  override def spawnAdapter[U](f: U ⇒ T): ActorRef[U] = ???
+  override def spawnAdapter[U](f: U ⇒ T): ActorRef[U] = {
+    val name = Helpers.base64(nextName)
+    nextName += 1
+    val ref = new FunctionRef[U](self.path / name, true,
+      (msg, _) ⇒ send(f(msg)),
+      (self) ⇒ sendSystem(DeathWatchNotification(self, null)))
+    childrenMap = childrenMap.updated(name, ref)
+    ref
+  }
 
   private[this] var receiveTimeout: (FiniteDuration, T) = null
   override def setReceiveTimeout(d: FiniteDuration, msg: T): Unit = {
@@ -164,8 +173,8 @@ private[typed] class ActorCell[T](override val system: ActorSystem[Nothing],
 
   protected def maySend: Boolean = !isTerminating
   protected def isTerminating: Boolean = ActorCell.isTerminating(_status)
-  protected def setTerminating(): Unit = assert(!ActorCell.isTerminating(unsafe.getAndAddInt(this, statusOffset, terminatingBit)))
-  protected def setClosed(): Unit = assert(!isClosed(unsafe.getAndAddInt(this, statusOffset, closedBit)))
+  protected def setTerminating(): Unit = if (!ActorCell.isTerminating(_status)) unsafe.getAndAddInt(this, statusOffset, terminatingBit)
+  protected def setClosed(): Unit = if (!isClosed(_status)) unsafe.getAndAddInt(this, statusOffset, closedBit)
 
   private def handleException: Catcher[Unit] = {
     case e: InterruptedException ⇒

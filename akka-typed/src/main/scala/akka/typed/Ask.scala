@@ -75,7 +75,7 @@ object AskPattern {
         p.trySuccess(msg)
         self.stop()
       },
-      () ⇒ if (!p.isCompleted) p.tryFailure(new NoSuchElementException("ask pattern terminated before value was received")))
+      (self) ⇒ if (!p.isCompleted) p.tryFailure(new NoSuchElementException("ask pattern terminated before value was received")))
     actorRef ! f(ref)
     val d = timeout.duration
     val c = scheduler.scheduleOnce(d)(p.tryFailure(new AskTimeoutException(s"did not receive message within $d")))(ec)

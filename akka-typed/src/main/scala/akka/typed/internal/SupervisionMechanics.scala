@@ -61,7 +61,7 @@ private[typed] trait SupervisionMechanics[T] {
 
   protected def fail(thr: Throwable): Unit = {
     if (_failed eq null) _failed = thr
-    publish(Logging.Error(thr, self.path.toString, getClass, s"terminating due to $thr"))
+    publish(Logging.Error(thr, self.path.toString, getClass, thr.getMessage))
     if (maySend) self.sendSystem(Terminate())
   }
 
@@ -96,7 +96,7 @@ private[typed] trait SupervisionMechanics[T] {
      * specific order.
      */
     try if (a ne null) a.management(ctx, PostStop)
-    //finally try stopFunctionRefs()
+    catch { case NonFatal(ex) ⇒ publish(Logging.Error(ex, self.path.toString, clazz(a), "failure during PostStop")) }
     finally try tellWatchersWeDied()
     finally try parent.sendSystem(DeathWatchNotification(self, failed))
     finally {

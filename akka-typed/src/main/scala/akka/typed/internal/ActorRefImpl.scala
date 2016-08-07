@@ -23,7 +23,7 @@ private[typed] class LocalActorRef[T](_path: a.ActorPath, private[typed] val cel
 }
 
 private[typed] final class FunctionRef[-T](_path: a.ActorPath, override val isLocal: Boolean,
-                                           send: (T, FunctionRef[T]) ⇒ Unit, terminate: () ⇒ Unit)
+                                           send: (T, FunctionRef[T]) ⇒ Unit, terminate: FunctionRef[T] ⇒ Unit)
   extends ActorRef[T](_path) with ActorRefImpl[T] with ScalaActorRef[T] {
 
   override def tell(msg: T): Unit =
@@ -54,7 +54,7 @@ private[typed] final class FunctionRef[-T](_path: a.ActorPath, override val isLo
   protected def doTerminate(): Unit = {
     val watchedBy = unsafe.getAndSetObject(this, watchedByOffset, null).asInstanceOf[S]
     if (watchedBy != null) {
-      try terminate() catch { case NonFatal(ex) ⇒ }
+      try terminate(this) catch { case NonFatal(ex) ⇒ }
       if (watchedBy.nonEmpty) watchedBy foreach sendTerminated
     }
   }

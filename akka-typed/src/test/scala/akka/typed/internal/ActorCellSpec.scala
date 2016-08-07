@@ -341,43 +341,47 @@ class ActorCellSpec extends Spec with Matchers with BeforeAndAfterAll with Scala
         sys.deadLettersInbox.receiveAll() should ===(Right("42") :: Nil)
       }
     }
-  }
 
-  /*
-   * also tests:
-   * - child creation
-   */
-  def `must not terminate before children have terminated`(): Unit = {
-    val parent = new DebugRef[ActorRef[Nothing]](sys.path / "sendDeadLetters", true)
-    val cell = new ActorCell(sys, Props(ContextAware[String] { ctx ⇒
-      ctx.spawn(Props(SelfAware[String] { self ⇒ parent ! self; Empty }), "child")
-      Empty
-    }), parent)
-    val ref = new LocalActorRef(parent.path / "child", cell)
-    cell.setSelf(ref)
-    debugCell(cell) {
-      ec.queueSize should ===(0)
-      cell.sendSystem(Create())
-      ec.runOne() // creating subject
-      parent.hasSomething should ===(false)
-      ec.runOne() // creating child
-      ec.queueSize should ===(0)
-      val child = parent.receiveAll() match {
-        case Right(child) :: Nil ⇒
-          child.toImplN.sendSystem(Watch(child, parent))
-          child
-        case other ⇒ fail(s"$other was not List(Right(<child>))")
+    /*
+     * also tests:
+     * - child creation
+     */
+    def `must not terminate before children have terminated`(): Unit = {
+      val parent = new DebugRef[ActorRef[Nothing]](sys.path / "sendDeadLetters", true)
+      val cell = new ActorCell(sys, Props(ContextAware[String] { ctx ⇒
+        ctx.spawn(Props(SelfAware[String] { self ⇒ parent ! self; Empty }), "child")
+        Empty
+      }), parent)
+      val ref = new LocalActorRef(parent.path / "child", cell)
+      cell.setSelf(ref)
+      debugCell(cell) {
+        ec.queueSize should ===(0)
+        cell.sendSystem(Create())
+        ec.runOne() // creating subject
+        parent.hasSomething should ===(false)
+        ec.runOne() // creating child
+        ec.queueSize should ===(0)
+        val child = parent.receiveAll() match {
+          case Right(child) :: Nil ⇒
+            child.toImplN.sendSystem(Watch(child, parent))
+            child
+          case other ⇒ fail(s"$other was not List(Right(<child>))")
+        }
+        ec.runOne()
+        ec.queueSize should ===(0)
+        cell.sendSystem(Terminate())
+        ec.runOne() // begin subject termination, will initiate child termination
+        parent.hasSomething should ===(false)
+        ec.runOne() // terminate child
+        parent.receiveAll() should ===(Left(DeathWatchNotification(child, null)) :: Nil)
+        ec.runOne() // terminate subject
+        parent.receiveAll() should ===(Left(DeathWatchNotification(ref, null)) :: Nil)
       }
-      ec.runOne()
-      ec.queueSize should ===(0)
-      cell.sendSystem(Terminate())
-      ec.runOne() // begin subject termination, will initiate child termination
-      parent.hasSomething should ===(false)
-      ec.runOne() // terminate child
-      parent.receiveAll() should ===(Left(DeathWatchNotification(child, null)) :: Nil)
-      ec.runOne() // terminate subject
-      parent.receiveAll() should ===(Left(DeathWatchNotification(ref, null)) :: Nil)
     }
+
+    def `must properly terminate if failing while handling Terminated for child actor`(): Unit = pending
+
+    def `must not terminate twice if failing in PostStop`(): Unit = pending
   }
 
   private def debugCell[T, U](cell: ActorCell[T])(block: ⇒ U): U =

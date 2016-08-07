@@ -242,11 +242,12 @@ private[typed] class ActorSystemImpl[-T](override val name: String,
             (if (cell.behavior ne null) cell.behavior.getClass else "null") +
             " status=" + cell.getStatus +
             " nextMsg=" + cell.peekMessage +
-            (if (cell.children.isEmpty) "" else "\n") +
+            (if (cell.children.isEmpty && cell.terminating.isEmpty) "" else "\n") +
             ({
+              val terminating = cell.terminating.toSeq.sorted.map(r ⇒ printNode(r.toImplN, indent + "   T"))
               val children = cell.children.toSeq.sorted
               val bulk = children.dropRight(1) map (r ⇒ printNode(r.toImplN, indent + "   |"))
-              bulk ++ (children.lastOption map (r ⇒ printNode(r.toImplN, indent + "    ")))
+              terminating ++ bulk ++ (children.lastOption map (r ⇒ printNode(r.toImplN, indent + "    ")))
             } mkString ("\n"))
         case _ ⇒
           indent + node.path.name + " " + e.Logging.simpleName(node)
@@ -255,4 +256,5 @@ private[typed] class ActorSystemImpl[-T](override val name: String,
     printNode(systemGuardian, "") + "\n" +
       printNode(userGuardian, "")
   }
+
 }

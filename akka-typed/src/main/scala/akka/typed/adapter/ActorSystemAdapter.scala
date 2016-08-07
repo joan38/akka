@@ -56,6 +56,7 @@ private[typed] class ActorSystemAdapter[-T](val untyped: a.ActorSystemImpl)
     untyped.terminate().map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
   override lazy val whenTerminated: scala.concurrent.Future[akka.typed.Terminated] =
     untyped.whenTerminated.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
+
 }
 
 private[typed] object ActorSystemAdapter {

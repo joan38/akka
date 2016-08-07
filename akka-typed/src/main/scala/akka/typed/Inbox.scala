@@ -19,7 +19,7 @@ class Inbox[T](name: String) {
   val ref: ActorRef[T] = {
     val uid = ThreadLocalRandom.current().nextInt()
     val path = RootActorPath(Address("akka.typed.inbox", "anonymous")).child(name).withUid(uid)
-    new internal.FunctionRef[T](path, true, (msg, self) ⇒ q.add(msg), () ⇒ ())
+    new internal.FunctionRef[T](path, true, (msg, self) ⇒ q.add(msg), (self) ⇒ ())
   }
 
   def receiveMsg(): T = q.poll() match {
